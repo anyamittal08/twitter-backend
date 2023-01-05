@@ -3,6 +3,7 @@ const morgan = require('morgan');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 const userRoutes = require('./routes/users');
+const tweetRoutes = require('./routes/tweets');
 const passport = require('passport');
 const {Strategy, ExtractJwt} = require('passport-jwt');
 const env = require('./config');
@@ -30,6 +31,7 @@ const User = require('./models/users');
 
     // Setup Routes
     app.use('/users', userRoutes)
+    app.use('/tweets', tweetRoutes)
 
 
     // Setup 404 Handler
