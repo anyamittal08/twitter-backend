@@ -23,28 +23,35 @@ Implementation:
     - eg., module.exports = Model
 */
 
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-const TweetSchema = mongoose.Schema({
+const TweetSchema = mongoose.Schema(
+  {
     author: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User'
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
     },
     content: String,
-})
+  },
+  {
+    timestamps: true,
+  }
+);
 
-TweetSchema.methods.toJSON = function() {
-    return {
-        id: this._id,
-        author: this.author,
-        content: this.content,
-    }
+TweetSchema.methods.toJSON = function () {
+  return {
+    id: this._id,
+    author: this.author,
+    content: this.content,
+    createdAt: this.createdAt,
+    updatedAt: this.updatedAt,
+  };
 };
 
-TweetSchema.virtual('id').get(function() {
-    return this._id;
+TweetSchema.virtual("id").get(function () {
+  return this._id;
 });
 
-const Tweet = mongoose.model('Tweet', TweetSchema);
+const Tweet = mongoose.model("Tweet", TweetSchema);
 
 module.exports = Tweet;

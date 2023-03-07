@@ -1,5 +1,5 @@
-require('dotenv').config();
+require("dotenv").config();
 
 module.exports = {
-    signingSecret: process.env['SIGNING_SECRET'],
-}
+  signingSecret: process.env["SIGNING_SECRET"],
+};
