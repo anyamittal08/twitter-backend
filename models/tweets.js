@@ -25,6 +25,9 @@ Implementation:
 
 const mongoose = require("mongoose");
 
+const Like = require("../models/likes");
+const Retweet = require("../models/retweets");
+
 const TweetSchema = mongoose.Schema(
   {
     author: {
@@ -35,21 +38,24 @@ const TweetSchema = mongoose.Schema(
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
   }
 );
 
-TweetSchema.methods.toJSON = function () {
-  return {
-    id: this._id,
-    author: this.author,
-    content: this.content,
-    createdAt: this.createdAt,
-    updatedAt: this.updatedAt,
-  };
-};
-
 TweetSchema.virtual("id").get(function () {
   return this._id;
+});
+
+
+// virtual properties cant handle async code (this is returning a promise) figure out a better way to get retweet and like count
+TweetSchema.virtual("likeCount").get(async function () {
+  const likeCount = await Like.countDocuments({ tweet: this._id });
+  return likeCount;
+});
+
+TweetSchema.virtual("retweetCount").get(async function () {
+  const retweetCount = await Retweet.countDocuments({ tweet: this._id });
+  return retweetCount;
 });
 
 const Tweet = mongoose.model("Tweet", TweetSchema);

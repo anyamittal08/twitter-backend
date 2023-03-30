@@ -8,6 +8,7 @@ const User = require("../models/users");
 const Relationship = require("../models/relationships");
 const Tweet = require("../models/tweets");
 const Like = require("../models/likes");
+const Retweet = require("../models/retweets");
 const env = require("../config");
 
 // Create new user / Sign up
@@ -90,6 +91,7 @@ router.get(
   passport.authenticate("jwt", { session: false }),
   async (req, res) => {
     const userId = req.user._id;
+    console.log(userId);
     const following = await Relationship.find({ follower: userId }).populate(
       "targetUser"
     );
@@ -102,10 +104,39 @@ router.get(
 
     const tweets = await Tweet.aggregate([
       {
+        $lookup: {
+          from: "retweets",
+          localField: "_id",
+          foreignField: "tweet",
+          as: "retweets",
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "retweets.user",
+          foreignField: "_id",
+          as: "retweeters",
+        },
+      },
+      {
         $match: {
-          author: {
-            $in: followingIds.map((userId) => mongoose.Types.ObjectId(userId)),
-          },
+          $or: [
+            {
+              author: {
+                $in: followingIds.map((userId) =>
+                  mongoose.Types.ObjectId(userId)
+                ),
+              },
+            },
+            {
+              "retweets.user": {
+                $in: followingIds.map((userId) =>
+                  mongoose.Types.ObjectId(userId)
+                ),
+              },
+            },
+          ],
         },
       },
       {
@@ -137,24 +168,117 @@ router.get(
           liked: {
             $in: [userId, "$likes.user"],
           },
+          retweeted: {
+            $in: [userId, "$retweets.user"],
+          },
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          let: { retweeters: "$retweeters" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $in: ["$_id", "$$retweeters._id"] },
+                    {
+                      $in: [
+                        "$_id",
+                        followingIds.map((id) => mongoose.Types.ObjectId(id)),
+                      ],
+                    },
+                  ],
+                },
+              },
+            },
+            {
+              $project: {
+                _id: 1,
+                name: 1,
+                displayName: 1,
+                username: 1,
+              },
+            },
+          ],
+          as: "retweetingFollows",
         },
       },
     ]);
-    console.log(tweets);
 
+    console.log(tweets);
     return res.json(tweets);
   }
 );
 
 // Get a user's tweets
-router.get("/:id/tweets", async (req, res) => {
-  const tweets = await Tweet.find({ author: req.params.id })
-    .populate("author")
-    .sort({
-      createdAt: "desc",
-    });
-  return res.json(tweets);
-});
+router.get(
+  "/:id/tweets",
+  passport.authenticate("jwt", { session: false, optional: true }),
+  async (req, res) => {
+    const userId = req.params.id;
+    const authenticatedUserId = req.user ? req.user._id : null;
+    console.log(req.user.id);
+    console.log(req.user._id); // ask Sri
+    const tweets = await Tweet.aggregate([
+      {
+        $lookup: {
+          from: "retweets",
+          localField: "_id",
+          foreignField: "tweet",
+          as: "retweets",
+        },
+      },
+      {
+        $match: {
+          $or: [
+            { author: mongoose.Types.ObjectId(userId) },
+            { "retweets.user": authenticatedUserId },
+          ],
+        },
+      },
+      {
+        $lookup: {
+          from: "likes",
+          localField: "_id",
+          foreignField: "tweet",
+          as: "likes",
+        },
+      },
+      {
+        $sort: {
+          createdAt: -1,
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "author",
+          foreignField: "_id",
+          as: "author",
+        },
+      },
+      {
+        $unwind: "$author",
+      },
+      {
+        $addFields: {
+          liked: {
+            $in: [authenticatedUserId, "$likes.user"],
+          },
+          retweeted: {
+            $in: [authenticatedUserId, "$retweets.user"],
+          },
+          retweetedByUser: {
+            $in: [mongoose.Types.ObjectId(userId), "$retweets.user"],
+          },
+        },
+      },
+    ]);
+    return res.json(tweets);
+  }
+);
 
 // Get userID from username
 router.get("/:username", async (req, res) => {
@@ -163,7 +287,7 @@ router.get("/:username", async (req, res) => {
     if (!user) {
       return res.status(400).json({ msg: "User not found" });
     }
-    res.json({ userId: user._id });
+    res.json(user);
   } catch (err) {
     console.error(err.message);
     res.status(500).send("Server Error");
@@ -275,4 +399,53 @@ router.get("/:id/followers", async (req, res) => {
   }
 });
 
+//get a user's likes
+router.get("/:id/likes", async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const likes = await Like.find({ user: userId }).populate("tweet");
+
+    return res.json(likes);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+//get retweets
+router.get("/:id/retweets", async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    const retweets = await Retweet.find({ user: userId }).populate({
+      path: "tweet",
+      options: { sort: { createdAt: "desc" } },
+    });
+
+    return res.json(retweets);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Server Error");
+  }
+});
+
+//search users
+router.get("/search/:query", async (req, res) => {
+  try {
+    const searchQuery = req.params.query;
+
+    const searchResults = await User.find({
+      $or: [
+        { username: { $regex: searchQuery, $options: "i" } },
+        { displayName: { $regex: searchQuery, $options: "i" } },
+      ],
+    });
+
+    res.json(searchResults);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server Error" });
+  }
+});
 module.exports = router;
