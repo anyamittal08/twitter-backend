@@ -35,6 +35,15 @@ const TweetSchema = mongoose.Schema(
       ref: "User",
     },
     content: String,
+    parentTweetId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Tweet",
+      default: null,
+    },
+    isReply: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -45,7 +54,6 @@ const TweetSchema = mongoose.Schema(
 TweetSchema.virtual("id").get(function () {
   return this._id;
 });
-
 
 // virtual properties cant handle async code (this is returning a promise) figure out a better way to get retweet and like count
 TweetSchema.virtual("likeCount").get(async function () {

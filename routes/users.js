@@ -100,25 +100,7 @@ router.get(
       (relationship) => relationship.targetUser.id
     );
 
-    console.log(followingIds);
-
     const tweets = await Tweet.aggregate([
-      {
-        $lookup: {
-          from: "retweets",
-          localField: "_id",
-          foreignField: "tweet",
-          as: "retweets",
-        },
-      },
-      {
-        $lookup: {
-          from: "users",
-          localField: "retweets.user",
-          foreignField: "_id",
-          as: "retweeters",
-        },
-      },
       {
         $match: {
           $or: [
@@ -141,19 +123,6 @@ router.get(
       },
       {
         $lookup: {
-          from: "likes",
-          localField: "_id",
-          foreignField: "tweet",
-          as: "likes",
-        },
-      },
-      {
-        $sort: {
-          createdAt: -1,
-        },
-      },
-      {
-        $lookup: {
           from: "users",
           localField: "author",
           foreignField: "_id",
@@ -163,8 +132,32 @@ router.get(
       {
         $unwind: "$author",
       },
+
+      {
+        $lookup: {
+          from: "Like",
+          localField: "_id",
+          foreignField: "tweet",
+          as: "likes",
+        },
+      },
+      {
+        $lookup: {
+          from: "Retweet",
+          localField: "_id",
+          foreignField: "tweet",
+          as: "retweets",
+        },
+      },
       {
         $addFields: {
+          likeCount: {
+            $size: "$likes",
+          },
+          retweetCount: {
+            $size: "$retweets",
+          },
+
           liked: {
             $in: [userId, "$likes.user"],
           },
@@ -173,41 +166,122 @@ router.get(
           },
         },
       },
-      {
-        $lookup: {
-          from: "users",
-          let: { retweeters: "$retweeters" },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $and: [
-                    { $in: ["$_id", "$$retweeters._id"] },
-                    {
-                      $in: [
-                        "$_id",
-                        followingIds.map((id) => mongoose.Types.ObjectId(id)),
-                      ],
-                    },
-                  ],
-                },
-              },
-            },
-            {
-              $project: {
-                _id: 1,
-                name: 1,
-                displayName: 1,
-                username: 1,
-              },
-            },
-          ],
-          as: "retweetingFollows",
-        },
-      },
     ]);
 
-    console.log(tweets);
+    // const tweetsRaw = tweets.map((s) => s.toJSON());
+
+    // await Promise.all(
+    //   tweetsRaw.map(async (r) => {
+    //     r.likeCount = await r.likeCount;
+    //     r.retweetCount = await r.retweetCount;
+    //   })
+    // );
+
+    // const tweets = await Tweet.aggregate([
+    //   {
+    //     $lookup: {
+    //       from: "retweets",
+    //       localField: "_id",
+    //       foreignField: "tweet",
+    //       as: "retweets",
+    //     },
+    //   },
+    //   {
+    //     $lookup: {
+    //       from: "users",
+    //       localField: "retweets.user",
+    //       foreignField: "_id",
+    //       as: "retweeters",
+    //     },
+    //   },
+    //   {
+    //     $match: {
+    //       $or: [
+    //         {
+    //           author: {
+    //             $in: followingIds.map((userId) =>
+    //               mongoose.Types.ObjectId(userId)
+    //             ),
+    //           },
+    //         },
+    //         {
+    //           "retweets.user": {
+    //             $in: followingIds.map((userId) =>
+    //               mongoose.Types.ObjectId(userId)
+    //             ),
+    //           },
+    //         },
+    //       ],
+    //     },
+    //   },
+    //   {
+    //     $lookup: {
+    //       from: "likes",
+    //       localField: "_id",
+    //       foreignField: "tweet",
+    //       as: "likes",
+    //     },
+    //   },
+    //   {
+    //     $sort: {
+    //       createdAt: -1,
+    //     },
+    //   },
+    //   {
+    //     $lookup: {
+    //       from: "users",
+    //       localField: "author",
+    //       foreignField: "_id",
+    //       as: "author",
+    //     },
+    //   },
+    //   {
+    //     $unwind: "$author",
+    //   },
+    //   {
+    //     $addFields: {
+    //       liked: {
+    //         $in: [userId, "$likes.user"],
+    //       },
+    //       retweeted: {
+    //         $in: [userId, "$retweets.user"],
+    //       },
+    //     },
+    //   },
+    //   {
+    //     $lookup: {
+    //       from: "users",
+    //       let: { retweeters: "$retweeters" },
+    //       pipeline: [
+    //         {
+    //           $match: {
+    //             $expr: {
+    //               $and: [
+    //                 { $in: ["$_id", "$$retweeters._id"] },
+    //                 {
+    //                   $in: [
+    //                     "$_id",
+    //                     followingIds.map((id) => mongoose.Types.ObjectId(id)),
+    //                   ],
+    //                 },
+    //               ],
+    //             },
+    //           },
+    //         },
+    //         {
+    //           $project: {
+    //             _id: 1,
+    //             name: 1,
+    //             displayName: 1,
+    //             username: 1,
+    //           },
+    //         },
+    //       ],
+    //       as: "retweetingFollows",
+    //     },
+    //   },
+    // ]);
+
     return res.json(tweets);
   }
 );

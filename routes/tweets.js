@@ -7,6 +7,7 @@ const Tweet = require("../models/tweets");
 const Like = require("../models/likes");
 const Retweet = require("../models/retweets");
 
+// post a
 router.post(
   "/",
   passport.authenticate("jwt", { session: false }),
@@ -128,7 +129,7 @@ router.post(
         tweet: tweetId,
         user: userId,
       });
-      if (retweetObj) { 
+      if (retweetObj) {
         return res.json(retweetObj);
       } else {
         const newRetweet = new Retweet();
@@ -198,7 +199,7 @@ router.get("/search/:query", async (req, res) => {
       content: { $regex: searchQuery, $options: "i" },
     });
 
-  // figure out a better way to get retweet and like count
+    // figure out a better way to get retweet and like count
     const searchResultsRaw = searchResults.map((s) => s.toJSON());
 
     await Promise.all(
@@ -214,4 +215,84 @@ router.get("/search/:query", async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 });
+
+// post a reply
+router.post(
+  "/reply/:parentTweetId",
+  passport.authenticate("jwt", { session: false }),
+  async (req, res) => {
+    const parentTweetId = req.params.parentTweetId;
+
+    //add error checks here
+    const reply = new Tweet();
+    const user = req.user;
+
+    if (req.body.content === "") return res.status(400).send("Bad Request");
+    reply.author = user;
+    reply.content = req.body.content;
+    reply.parentTweetId = parentTweetId;
+    reply.isReply = true;
+
+    await reply.save();
+    return res.json(reply.toJSON());
+  }
+);
+
+// retreive layer 1 of replies
+router.get("/replies/:tweetId", async (req, res) => {
+  try {
+    const parentTweetId = req.params.tweetId;
+
+    const replies = await Tweet.aggregate([
+      {
+        $match: {
+          parentTweetId: mongoose.Types.ObjectId(parentTweetId),
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "author",
+          foreignField: "_id",
+          as: "author",
+        },
+      },
+      {
+        $unwind: "$author",
+      },
+      {
+        $lookup: {
+          from: "Like",
+          localField: "_id",
+          foreignField: "tweet",
+          as: "likes",
+        },
+      },
+      {
+        $lookup: {
+          from: "Retweet",
+          localField: "_id",
+          foreignField: "tweet",
+          as: "retweets",
+        },
+      },
+      {
+        $addFields: {
+          likeCount: {
+            $size: "$likes",
+          },
+          retweetCount: {
+            $size: "$retweets",
+          },
+        },
+      },
+    ]);
+
+    return res.json(replies);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ msg: "Server Error" });
+  }
+});
+
 module.exports = router;
