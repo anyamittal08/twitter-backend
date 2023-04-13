@@ -45,29 +45,7 @@ router.post("/login", async ({ body }, res) => {
   });
 });
 
-/*
-Task: As a user, I should be able to update my profile information
-
-Design:
-PUT /users (requires authentication)
-Body { email: "manan@argv.io", username: "manan", displayName: "manan" }
-
-Effect: should update the email, username and displayName of the authenticated user in db, and return refreshed object
-
-Implementation:
-- define a new API route for PUT /users
-    - eg., router.put("/", (req, res) => {.....})
-- add authentication guard to the route
-    - you can do this by adding the middleware `passport.authenticate('jwt', { session: false })` to the route
-    - look here for more details http://www.passportjs.org/concepts/authentication/middleware/
-- in the route handler, retrieve the authenticated user and perform the update
-    - retreive the authenticated user using `req.user` as passport sets the property on successful authentication
-    - update the user object with new properties from req.body
-    - save the updates by performing `.save()` on the mongoose model
-- return the updated user model to the client
-    - return the save response to the client using res.json({...})
-*/
-
+//update user info
 router.put(
   "/",
   passport.authenticate("jwt", { session: false }),
@@ -86,39 +64,35 @@ router.put(
   }
 );
 
+//get a user's home feed
 router.get(
   "/home",
   passport.authenticate("jwt", { session: false }),
   async (req, res) => {
     const userId = req.user._id;
-    console.log(userId);
-    const following = await Relationship.find({ follower: userId }).populate(
-      "targetUser"
-    );
+    const followedUserRelationshipOjbs = await Relationship.find({
+      follower: userId,
+    }).populate("targetUser");
 
-    const followingIds = following.map(
+    const followedUserIds = followedUserRelationshipOjbs.map(
       (relationship) => relationship.targetUser.id
     );
 
     const tweets = await Tweet.aggregate([
       {
-        $match: {
-          $or: [
-            {
-              author: {
-                $in: followingIds.map((userId) =>
-                  mongoose.Types.ObjectId(userId)
-                ),
-              },
-            },
-            {
-              "retweets.user": {
-                $in: followingIds.map((userId) =>
-                  mongoose.Types.ObjectId(userId)
-                ),
-              },
-            },
-          ],
+        $lookup: {
+          from: "retweets",
+          localField: "_id",
+          foreignField: "tweet",
+          as: "retweets",
+        },
+      },
+      {
+        $lookup: {
+          from: "likes",
+          localField: "_id",
+          foreignField: "tweet",
+          as: "likes",
         },
       },
       {
@@ -130,34 +104,47 @@ router.get(
         },
       },
       {
-        $unwind: "$author",
-      },
-
-      {
-        $lookup: {
-          from: "Like",
-          localField: "_id",
-          foreignField: "tweet",
-          as: "likes",
+        $match: {
+          $or: [
+            {
+              "author._id": {
+                $in: followedUserIds.map((userId) =>
+                  mongoose.Types.ObjectId(userId)
+                ),
+              },
+            },
+            {
+              "retweets.user": {
+                $in: followedUserIds.map((userId) =>
+                  mongoose.Types.ObjectId(userId)
+                ),
+              },
+            },
+          ],
         },
       },
       {
         $lookup: {
-          from: "Retweet",
-          localField: "_id",
-          foreignField: "tweet",
-          as: "retweets",
+          from: "users",
+          localField: "retweets.user",
+          foreignField: "_id",
+          as: "retweeters",
         },
       },
       {
         $addFields: {
-          likeCount: {
-            $size: "$likes",
+          followedRetweeters: {
+            $filter: {
+              input: "$retweeters",
+              as: "retweeter",
+              cond: {
+                $in: [
+                  "$$retweeter._id",
+                  followedUserIds.map((id) => mongoose.Types.ObjectId(id)),
+                ],
+              },
+            },
           },
-          retweetCount: {
-            $size: "$retweets",
-          },
-
           liked: {
             $in: [userId, "$likes.user"],
           },
@@ -167,121 +154,6 @@ router.get(
         },
       },
     ]);
-
-    // const tweetsRaw = tweets.map((s) => s.toJSON());
-
-    // await Promise.all(
-    //   tweetsRaw.map(async (r) => {
-    //     r.likeCount = await r.likeCount;
-    //     r.retweetCount = await r.retweetCount;
-    //   })
-    // );
-
-    // const tweets = await Tweet.aggregate([
-    //   {
-    //     $lookup: {
-    //       from: "retweets",
-    //       localField: "_id",
-    //       foreignField: "tweet",
-    //       as: "retweets",
-    //     },
-    //   },
-    //   {
-    //     $lookup: {
-    //       from: "users",
-    //       localField: "retweets.user",
-    //       foreignField: "_id",
-    //       as: "retweeters",
-    //     },
-    //   },
-    //   {
-    //     $match: {
-    //       $or: [
-    //         {
-    //           author: {
-    //             $in: followingIds.map((userId) =>
-    //               mongoose.Types.ObjectId(userId)
-    //             ),
-    //           },
-    //         },
-    //         {
-    //           "retweets.user": {
-    //             $in: followingIds.map((userId) =>
-    //               mongoose.Types.ObjectId(userId)
-    //             ),
-    //           },
-    //         },
-    //       ],
-    //     },
-    //   },
-    //   {
-    //     $lookup: {
-    //       from: "likes",
-    //       localField: "_id",
-    //       foreignField: "tweet",
-    //       as: "likes",
-    //     },
-    //   },
-    //   {
-    //     $sort: {
-    //       createdAt: -1,
-    //     },
-    //   },
-    //   {
-    //     $lookup: {
-    //       from: "users",
-    //       localField: "author",
-    //       foreignField: "_id",
-    //       as: "author",
-    //     },
-    //   },
-    //   {
-    //     $unwind: "$author",
-    //   },
-    //   {
-    //     $addFields: {
-    //       liked: {
-    //         $in: [userId, "$likes.user"],
-    //       },
-    //       retweeted: {
-    //         $in: [userId, "$retweets.user"],
-    //       },
-    //     },
-    //   },
-    //   {
-    //     $lookup: {
-    //       from: "users",
-    //       let: { retweeters: "$retweeters" },
-    //       pipeline: [
-    //         {
-    //           $match: {
-    //             $expr: {
-    //               $and: [
-    //                 { $in: ["$_id", "$$retweeters._id"] },
-    //                 {
-    //                   $in: [
-    //                     "$_id",
-    //                     followingIds.map((id) => mongoose.Types.ObjectId(id)),
-    //                   ],
-    //                 },
-    //               ],
-    //             },
-    //           },
-    //         },
-    //         {
-    //           $project: {
-    //             _id: 1,
-    //             name: 1,
-    //             displayName: 1,
-    //             username: 1,
-    //           },
-    //         },
-    //       ],
-    //       as: "retweetingFollows",
-    //     },
-    //   },
-    // ]);
-
     return res.json(tweets);
   }
 );
@@ -293,8 +165,7 @@ router.get(
   async (req, res) => {
     const userId = req.params.id;
     const authenticatedUserId = req.user ? req.user._id : null;
-    console.log(req.user.id);
-    console.log(req.user._id); // ask Sri
+
     const tweets = await Tweet.aggregate([
       {
         $lookup: {
@@ -308,7 +179,7 @@ router.get(
         $match: {
           $or: [
             { author: mongoose.Types.ObjectId(userId) },
-            { "retweets.user": authenticatedUserId },
+            { "retweets.user": mongoose.Types.ObjectId(userId) },
           ],
         },
       },
@@ -350,6 +221,7 @@ router.get(
         },
       },
     ]);
+    console.log(tweets.length);
     return res.json(tweets);
   }
 );
@@ -473,8 +345,8 @@ router.get("/:id/followers", async (req, res) => {
   }
 });
 
-//get a user's likes
-router.get("/:id/likes", async (req, res) => {
+//get a user's liked tweets
+router.get("/:id/likedTweets", async (req, res) => {
   try {
     const userId = req.params.id;
 
@@ -522,4 +394,5 @@ router.get("/search/:query", async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 });
+
 module.exports = router;

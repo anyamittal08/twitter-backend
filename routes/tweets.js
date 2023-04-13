@@ -7,9 +7,9 @@ const Tweet = require("../models/tweets");
 const Like = require("../models/likes");
 const Retweet = require("../models/retweets");
 
-// post a
+// post a tweet
 router.post(
-  "/",
+  "/post",
   passport.authenticate("jwt", { session: false }),
   async (req, res) => {
     const tweet = new Tweet();
@@ -21,6 +21,47 @@ router.post(
 
     await tweet.save();
     return res.json(tweet.toJSON());
+  }
+);
+
+// delete a tweet
+router.delete(
+  "/:tweetId/delete",
+  passport.authenticate("jwt", { session: false }),
+  async (req, res) => {
+    try {
+      const tweetToDeleteId = req.params.tweetId;
+      const userId = req.user._id;
+
+      if (!mongoose.Types.ObjectId.isValid(tweetToDeleteId))
+        return res.status(404).json({ msg: "Invalid tweet id" });
+
+      const tweetToDelete = await Tweet.findById(tweetToDeleteId);
+
+      if (!tweetToDelete)
+        return res.status(404).json({ msg: "Tweet does not exist" });
+
+      if (!tweetToDelete.author.equals(userId))
+        return res.status(401).json({ msg: "Unauthorized" });
+
+      if (tweetToDelete.isDeleted) {
+        return res.status(404).json({ msg: "Tweet is already deleted" });
+      }
+
+      if (tweetToDelete.isReply || tweetToDelete.isThread) {
+        const parentTweet = await Tweet.findById(tweetToDelete.parentTweetId);
+
+        parentTweet.replyCount--;
+
+        await parentTweet.save();
+      }
+      tweetToDelete.isDeleted = true;
+      await tweetToDelete.save();
+      return res.json({ msg: "Success" });
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).json({ msg: "Server error" });
+    }
   }
 );
 
@@ -37,25 +78,29 @@ router.post(
         return res.status(404).json({ msg: "Invalid tweet id" });
       }
 
-      const doesTweetExist = await Tweet.exists({ _id: tweetId });
+      const tweet = await Tweet.findById(tweetId);
 
-      if (!doesTweetExist)
-        return res.status(404).json({ msg: "Tweet not found" });
+      if (!tweet) return res.status(404).json({ msg: "Tweet not found" });
 
       let likeObj = await Like.findOne({
         tweet: tweetId,
         user: userId,
       });
-      if (likeObj) {
-        return res.json(likeObj);
-      } else {
-        const newLike = new Like();
-        newLike.tweet = tweetId;
-        newLike.user = userId;
 
-        await newLike.save();
-        return res.json(newLike);
+      if (likeObj) {
+        return res.json({ msg: "This user has already liked this tweet" });
       }
+      const newLike = new Like();
+      newLike.tweet = tweetId;
+      newLike.user = userId;
+
+      //increment likeCount
+      tweet.likeCount++;
+
+      await newLike.save();
+      await tweet.save();
+
+      return res.json({ liked: true });
     } catch (err) {
       console.error(err.message);
       return res.status(500).json({ msg: "Server Error" });
@@ -63,9 +108,9 @@ router.post(
   }
 );
 
-//undo like
+//undo a like
 router.delete(
-  "/:id/unlike",
+  "/:id/like",
   passport.authenticate("jwt", { session: false }),
   async (req, res) => {
     try {
@@ -75,14 +120,20 @@ router.delete(
       if (!mongoose.Types.ObjectId.isValid(tweetId))
         return res.status(404).json({ msg: "Invalid tweet id" });
 
+      const tweet = await Tweet.findById(tweetId);
+
+      if (!tweet) return res.status(404).json({ msg: "Tweet not found" });
+
       Like.findOneAndDelete({
         tweet: tweetId,
         user: userId,
-      }).then((likeObj) => {
+      }).then(async (likeObj) => {
         if (!likeObj) {
-          return res.status(404).json({ msg: "Like Object not found" });
+          return res.status(404).json({ msg: "Like object not found" });
         }
-        res.send(likeObj);
+        tweet.likeCount--;
+        await tweet.save();
+        return res.json({ liked: false });
       });
     } catch (err) {
       console.error(err.message);
@@ -91,8 +142,8 @@ router.delete(
   }
 );
 
-//get liking users
-router.get("/:id/liking", async (req, res) => {
+//get liking users for a tweet
+router.get("/:id/likedBy", async (req, res) => {
   try {
     const tweetId = req.params.id;
 
@@ -107,7 +158,7 @@ router.get("/:id/liking", async (req, res) => {
   }
 });
 
-//retweet
+//retweet a tweet
 router.post(
   "/:id/retweet",
   passport.authenticate("jwt", { session: false }),
@@ -120,25 +171,27 @@ router.post(
         return res.status(404).json({ msg: "Invalid tweet id" });
       }
 
-      const doesTweetExist = await Tweet.exists({ _id: tweetId });
+      const tweet = await Tweet.findById(tweetId);
 
-      if (!doesTweetExist)
-        return res.status(404).json({ msg: "Tweet not found" });
+      if (!tweet) return res.status(404).json({ msg: "Tweet not found" });
 
       let retweetObj = await Retweet.findOne({
         tweet: tweetId,
         user: userId,
       });
       if (retweetObj) {
-        return res.json(retweetObj);
-      } else {
-        const newRetweet = new Retweet();
-        newRetweet.tweet = tweetId;
-        newRetweet.user = userId;
-
-        await newRetweet.save();
-        return res.json(newRetweet);
+        return res.json({ msg: "User has already retweeted this tweet" });
       }
+      const newRetweet = new Retweet();
+      newRetweet.tweet = tweetId;
+      newRetweet.user = userId;
+
+      //increment retweet count
+      tweet.retweetCount++;
+
+      await newRetweet.save();
+      await tweet.save();
+      return res.json({ retweeted: true });
     } catch (err) {
       console.error(err.message);
       return res.status(500).json({ msg: "Server Error" });
@@ -158,14 +211,21 @@ router.delete(
       if (!mongoose.Types.ObjectId.isValid(tweetId))
         return res.status(404).json({ msg: "Invalid tweet id" });
 
+      const tweet = await Tweet.findById(tweetId);
+
+      if (!tweet) return res.status(404).json({ msg: "Tweet not found" });
+
       Retweet.findOneAndDelete({
         tweet: tweetId,
         user: userId,
-      }).then((retweetObj) => {
+      }).then(async (retweetObj) => {
         if (!retweetObj) {
-          return res.status(404).json({ msg: "Retweet Object not found" });
+          return res.status(404).json({ msg: "Retweet object not found" });
         }
-        res.send(retweetObj);
+        tweet.retweetCount--;
+        await tweet.save();
+
+        res.json({ retweeted: false });
       });
     } catch (err) {
       console.error(err.message);
@@ -175,7 +235,7 @@ router.delete(
 );
 
 //get retweeting users
-router.get("/:id/retweeting", async (req, res) => {
+router.get("/:id/retweetedBy", async (req, res) => {
   try {
     const tweetId = req.params.id;
 
@@ -199,17 +259,7 @@ router.get("/search/:query", async (req, res) => {
       content: { $regex: searchQuery, $options: "i" },
     });
 
-    // figure out a better way to get retweet and like count
-    const searchResultsRaw = searchResults.map((s) => s.toJSON());
-
-    await Promise.all(
-      searchResultsRaw.map(async (r) => {
-        r.likeCount = await r.likeCount;
-        r.retweetCount = await r.retweetCount;
-      })
-    );
-
-    res.json(searchResultsRaw);
+    res.json(searchResults);
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Server Error" });
@@ -223,74 +273,151 @@ router.post(
   async (req, res) => {
     const parentTweetId = req.params.parentTweetId;
 
-    //add error checks here
+    if (!mongoose.Types.ObjectId.isValid(parentTweetId))
+      return res.status(404).json({ msg: "Invalid tweet id" });
+
+    const parentTweet = await Tweet.findById(parentTweetId).populate("author");
+
+    if (!parentTweet)
+      return res.status(404).json({ msg: "Tweet does not exist" });
+
     const reply = new Tweet();
-    const user = req.user;
+    const user = req.user._id;
 
     if (req.body.content === "") return res.status(400).send("Bad Request");
     reply.author = user;
     reply.content = req.body.content;
     reply.parentTweetId = parentTweetId;
-    reply.isReply = true;
+    reply.parentTweetUserId = parentTweet.author._id;
+
+    if (
+      toString(parentTweet.author._id) !== toString(user) ||
+      parentTweet.nextTweetInThreadId
+    ) {
+      reply.isReply = true;
+    } else {
+      reply.isThread = true;
+      if (!parentTweet.threadId) {
+        parentTweet.threadId = parentTweet._id;
+      }
+      reply.threadId = parentTweet.threadId;
+    }
 
     await reply.save();
+
+    if (
+      toString(parentTweet.author._id) === toString(user) &&
+      !parentTweet.nextTweetInThreadId
+    ) {
+      parentTweet.nextTweetInThreadId = reply._id;
+    }
+    parentTweet.replyCount++;
+
+    await parentTweet.save();
     return res.json(reply.toJSON());
   }
 );
 
 // retreive layer 1 of replies
-router.get("/replies/:tweetId", async (req, res) => {
+router.get(
+  "/replies/:tweetId",
+  passport.authenticate("jwt", { session: false }),
+  async (req, res) => {
+    try {
+      const authenticatedUserId = req.user._id;
+      const tweetId = req.params.tweetId;
+      let thread = [];
+
+      if (!mongoose.Types.ObjectId.isValid(tweetId)) {
+        return res.status(404).json({ msg: "Invalid tweet id" });
+      }
+
+      const tweet = await Tweet.findById(tweetId);
+
+      if (!tweet) return res.status(404).json({ msg: "Tweet not found" });
+
+      if (tweet.threadId) {
+        thread = await Tweet.find({ threadId: tweet.threadId }).sort("desc");
+      }
+
+      const replies = await Tweet.aggregate([
+        {
+          $match: {
+            $and: [
+              { parentTweetId: mongoose.Types.ObjectId(tweetId) },
+              { isReply: true },
+            ],
+          },
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "author",
+            foreignField: "_id",
+            as: "author",
+          },
+        },
+        {
+          $unwind: "$author",
+        },
+        {
+          $lookup: {
+            from: "retweets",
+            localField: "_id",
+            foreignField: "tweet",
+            as: "retweets",
+          },
+        },
+        {
+          $lookup: {
+            from: "likes",
+            localField: "_id",
+            foreignField: "tweet",
+            as: "likes",
+          },
+        },
+        {
+          $addFields: {
+            liked: {
+              $in: [authenticatedUserId, "$likes.user"],
+            },
+            retweeted: {
+              $in: [authenticatedUserId, "$retweets.user"],
+            },
+          },
+        },
+      ]);
+
+      return res.json({ thread: thread, replies: replies });
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).json({ msg: "Server Error" });
+    }
+  }
+);
+
+// get all tweets in a thread
+router.get("/thread/:tweetId", async (req, res) => {
   try {
-    const parentTweetId = req.params.tweetId;
+    const tweetId = req.params.tweetId;
 
-    const replies = await Tweet.aggregate([
-      {
-        $match: {
-          parentTweetId: mongoose.Types.ObjectId(parentTweetId),
-        },
-      },
-      {
-        $lookup: {
-          from: "users",
-          localField: "author",
-          foreignField: "_id",
-          as: "author",
-        },
-      },
-      {
-        $unwind: "$author",
-      },
-      {
-        $lookup: {
-          from: "Like",
-          localField: "_id",
-          foreignField: "tweet",
-          as: "likes",
-        },
-      },
-      {
-        $lookup: {
-          from: "Retweet",
-          localField: "_id",
-          foreignField: "tweet",
-          as: "retweets",
-        },
-      },
-      {
-        $addFields: {
-          likeCount: {
-            $size: "$likes",
-          },
-          retweetCount: {
-            $size: "$retweets",
-          },
-        },
-      },
-    ]);
+    if (!mongoose.Types.ObjectId.isValid(tweetId)) {
+      return res.status(404).json({ msg: "Invalid tweet id" });
+    }
 
-    return res.json(replies);
-  } catch (err) {
-    console.error(err.message);
+    const tweet = await Tweet.findById(tweetId);
+
+    if (!tweet) return res.status(404).json({ msg: "Tweet not found" });
+
+    if (!tweet.threadId) {
+      return res.status(404).json({ msg: "this tweet is not a thread" });
+    }
+
+    const thread = await Tweet.find({ threadId: tweet.threadId }).sort("desc");
+
+    return res.json(thread);
+  } catch (error) {
+    console.error(error.message);
     res.status(500).json({ msg: "Server Error" });
   }
 });
