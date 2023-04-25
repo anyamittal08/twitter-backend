@@ -104,6 +104,9 @@ router.get(
         },
       },
       {
+        $unwind: "$author",
+      },
+      {
         $match: {
           $or: [
             {
@@ -166,6 +169,9 @@ router.get(
     const userId = req.params.id;
     const authenticatedUserId = req.user ? req.user._id : null;
 
+    const user = await User.findById(userId);
+    console.log(user);
+
     const tweets = await Tweet.aggregate([
       {
         $lookup: {
@@ -209,19 +215,25 @@ router.get(
       },
       {
         $addFields: {
+          retweetedByUser: {
+            $in: [mongoose.Types.ObjectId(userId), "$retweets.user"],
+          },
           liked: {
             $in: [authenticatedUserId, "$likes.user"],
           },
           retweeted: {
             $in: [authenticatedUserId, "$retweets.user"],
           },
-          retweetedByUser: {
-            $in: [mongoose.Types.ObjectId(userId), "$retweets.user"],
+          userObject: {
+            $cond: {
+              if: { $eq: ["$retweetedByUser", true] },
+              then: mongoose.Types.ObjectId(userId),
+              else: null,
+            },
           },
         },
       },
     ]);
-    console.log(tweets.length);
     return res.json(tweets);
   }
 );
@@ -350,7 +362,14 @@ router.get("/:id/likedTweets", async (req, res) => {
   try {
     const userId = req.params.id;
 
-    const likes = await Like.find({ user: userId }).populate("tweet");
+    const likes = await Like.find({ user: userId })
+      .populate("tweet")
+      .populate({
+        path: "tweet",
+        populate: {
+          path: "author",
+        },
+      });
 
     return res.json(likes);
   } catch (err) {

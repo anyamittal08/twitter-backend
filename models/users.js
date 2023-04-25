@@ -1,23 +1,28 @@
 const mongoose = require("mongoose");
 
 // email validation, uniqueness validation
-const UserSchema = mongoose.Schema({
-  email: String,
-  username: String,
-  password: String,
-  displayName: {
-    type: String,
-    default: "",
+const UserSchema = mongoose.Schema(
+  {
+    email: String,
+    username: String,
+    password: String,
+    displayName: {
+      type: String,
+      default: "",
+    },
+    firstName: {
+      type: String,
+      default: "",
+    },
+    lastName: {
+      type: String,
+      default: "",
+    },
   },
-  firstName: {
-    type: String,
-    default: "",
-  },
-  lastName: {
-    type: String,
-    default: "",
-  },
-});
+  {
+    timestamps: true,
+  }
+);
 
 UserSchema.methods.toJSON = function () {
   return {

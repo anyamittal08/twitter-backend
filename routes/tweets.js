@@ -6,6 +6,7 @@ const passport = require("passport");
 const Tweet = require("../models/tweets");
 const Like = require("../models/likes");
 const Retweet = require("../models/retweets");
+const User = require("../models/users");
 
 // post a tweet
 router.post(
@@ -145,12 +146,23 @@ router.delete(
 //get liking users for a tweet
 router.get("/:id/likedBy", async (req, res) => {
   try {
-    const tweetId = req.params.id;
+    const tweetId = mongoose.Types.ObjectId(req.params.id);
 
-    const likingUsers = await Like.find({ tweet: tweetId })
-      .populate("user")
-      .sort("desc");
+    // const likingUsers = await Like.find({ tweet: tweetId })
+    //   .populate("user")
+    //   .sort("desc");
 
+    const likingUsers = await User.aggregate([
+      {
+        $lookup: {
+          from: "likes",
+          localField: "_id",
+          foreignField: "user",
+          as: "likes",
+        },
+      },
+      { $match: { "likes.tweet": tweetId } },
+    ]);
     return res.json(likingUsers);
   } catch (err) {
     console.error(err);
@@ -237,11 +249,19 @@ router.delete(
 //get retweeting users
 router.get("/:id/retweetedBy", async (req, res) => {
   try {
-    const tweetId = req.params.id;
+    const tweetId = mongoose.Types.ObjectId(req.params.id);
 
-    const retweetingUsers = await Retweet.find({ tweet: tweetId })
-      .populate("user")
-      .sort("desc");
+    const retweetingUsers = await User.aggregate([
+      {
+        $lookup: {
+          from: "retweets",
+          localField: "_id",
+          foreignField: "user",
+          as: "retweets",
+        },
+      },
+      { $match: { "retweets.tweet": tweetId } },
+    ]);
 
     return res.json(retweetingUsers);
   } catch (err) {
