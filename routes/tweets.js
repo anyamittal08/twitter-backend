@@ -277,7 +277,7 @@ router.get("/search/:query", async (req, res) => {
 
     const searchResults = await Tweet.find({
       content: { $regex: searchQuery, $options: "i" },
-    });
+    }).populate("author");
 
     res.json(searchResults);
   } catch (error) {
@@ -311,7 +311,7 @@ router.post(
     reply.parentTweetUserId = parentTweet.author._id;
 
     if (
-      toString(parentTweet.author._id) !== toString(user) ||
+      parentTweet.author._id.toString() !== user.toString() ||
       parentTweet.nextTweetInThreadId
     ) {
       reply.isReply = true;
@@ -326,11 +326,12 @@ router.post(
     await reply.save();
 
     if (
-      toString(parentTweet.author._id) === toString(user) &&
+      parentTweet.author._id.toString() === user.toString() &&
       !parentTweet.nextTweetInThreadId
     ) {
       parentTweet.nextTweetInThreadId = reply._id;
     }
+
     parentTweet.replyCount++;
 
     await parentTweet.save();
@@ -352,12 +353,17 @@ router.get(
         return res.status(404).json({ msg: "Invalid tweet id" });
       }
 
-      const tweet = await Tweet.findById(tweetId);
+      const tweet = await Tweet.findById(tweetId).populate("author");
 
       if (!tweet) return res.status(404).json({ msg: "Tweet not found" });
 
       if (tweet.threadId) {
-        thread = await Tweet.find({ threadId: tweet.threadId }).sort("desc");
+        thread = await Tweet.find({
+          threadId: tweet.threadId,
+          createdAt: { $gte: tweet.createdAt },
+        })
+          .populate("author")
+          .sort("desc");
       }
 
       const replies = await Tweet.aggregate([
@@ -408,7 +414,7 @@ router.get(
         },
       ]);
 
-      return res.json({ thread: thread, replies: replies });
+      return res.json({ tweet, thread, replies });
     } catch (err) {
       console.error(err.message);
       res.status(500).json({ msg: "Server Error" });

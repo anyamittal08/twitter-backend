@@ -18,6 +18,14 @@ const UserSchema = mongoose.Schema(
       type: String,
       default: "",
     },
+    followerCount: {
+      type: Number,
+      default: 0,
+    },
+    followingCount: {
+      type: Number,
+      default: 0,
+    },
   },
   {
     timestamps: true,
@@ -32,6 +40,9 @@ UserSchema.methods.toJSON = function () {
     displayName: this.displayName,
     firstName: this.firstName,
     lastName: this.lastName,
+    createdAt: this.createdAt,
+    followerCount: this.followerCount,
+    followingCount: this.followingCount,
   };
 };
 
