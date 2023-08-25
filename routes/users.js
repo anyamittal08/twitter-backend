@@ -18,7 +18,7 @@ router.post("/", async ({ body }, res) => {
   user.username = body.username;
   user.displayName = body.displayName;
   user.firstName = body.firstName;
-  user.lastName = body.lastname;
+  user.lastName = body.lastName;
   user.password = await bcrypt.hash(body.password, await bcrypt.genSalt(10));
 
   await user.save();
@@ -170,7 +170,6 @@ router.get(
     const authenticatedUserId = req.user ? req.user._id : null;
 
     const user = await User.findById(userId);
-    console.log(user);
 
     const tweets = await Tweet.aggregate([
       {
@@ -245,7 +244,41 @@ router.get("/:username", async (req, res) => {
     if (!user) {
       return res.status(400).json({ msg: "User not found" });
     }
-    res.json(user);
+
+    const userId = user.id;
+    const userWithCounts = await User.aggregate([
+      { $match: { _id: mongoose.Types.ObjectId(userId) } },
+      {
+        $lookup: {
+          from: "relationships", // Replace with the actual collection name of Relationship model
+          localField: "_id",
+          foreignField: "targetUser",
+          as: "followers",
+        },
+      },
+      {
+        $lookup: {
+          from: "relationships", // Replace with the actual collection name of Relationship model
+          localField: "_id",
+          foreignField: "sourceUser",
+          as: "following",
+        },
+      },
+      {
+        $project: {
+          id: "$_id",
+          firstName: 1,
+          lastName: 1,
+          username: 1,
+          displayName: 1,
+          email: 1,
+          followerCount: { $size: "$followers" },
+          followingCount: { $size: "$following" },
+          createdAt: 1,
+        },
+      },
+    ]);
+    res.json(userWithCounts[0]);
   } catch (err) {
     console.error(err.message);
     res.status(500).send("Server Error");

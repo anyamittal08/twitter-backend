@@ -18,19 +18,15 @@ const UserSchema = mongoose.Schema(
       type: String,
       default: "",
     },
-    followerCount: {
-      type: Number,
-      default: 0,
-    },
-    followingCount: {
-      type: Number,
-      default: 0,
-    },
   },
   {
     timestamps: true,
   }
 );
+
+UserSchema.virtual("id").get(function () {
+  return this._id;
+});
 
 UserSchema.methods.toJSON = function () {
   return {
@@ -41,13 +37,7 @@ UserSchema.methods.toJSON = function () {
     firstName: this.firstName,
     lastName: this.lastName,
     createdAt: this.createdAt,
-    followerCount: this.followerCount,
-    followingCount: this.followingCount,
   };
 };
-
-UserSchema.virtual("id").get(function () {
-  return this._id;
-});
 
 module.exports = mongoose.model("User", UserSchema);
