@@ -250,7 +250,7 @@ router.get("/:username", async (req, res) => {
       { $match: { _id: mongoose.Types.ObjectId(userId) } },
       {
         $lookup: {
-          from: "relationships", // Replace with the actual collection name of Relationship model
+          from: "relationships",
           localField: "_id",
           foreignField: "targetUser",
           as: "followers",
@@ -258,9 +258,9 @@ router.get("/:username", async (req, res) => {
       },
       {
         $lookup: {
-          from: "relationships", // Replace with the actual collection name of Relationship model
+          from: "relationships",
           localField: "_id",
-          foreignField: "sourceUser",
+          foreignField: "follower",
           as: "following",
         },
       },
@@ -446,5 +446,36 @@ router.get("/search/:query", async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 });
+
+// check if relaitonship exists
+router.get(
+  "/:id/relationship",
+  passport.authenticate("jwt", { session: false }),
+  async (req, res) => {
+    try {
+      const authenticatedUserId = req.user._id;
+      const userId = req.params.id;
+
+      const userIsFollowed = (await Relationship.findOne({
+        targetUser: userId,
+        follower: authenticatedUserId,
+      }))
+        ? true
+        : false;
+
+      const userIsFollower = (await Relationship.findOne({
+        targetUser: authenticatedUserId,
+        follower: userId,
+      }))
+        ? true
+        : false;
+
+      res.json({ userIsFollowed, userIsFollower });
+    } catch (err) {
+      console.error(err);
+      res.status(500).send("Server Error");
+    }
+  }
+);
 
 module.exports = router;
