@@ -391,19 +391,111 @@ router.get("/:id/followers", async (req, res) => {
 });
 
 //get a user's liked tweets
-router.get("/:id/likedTweets", async (req, res) => {
+router.get("/:id/likes", async (req, res) => {
   try {
     const userId = req.params.id;
+    // const likes = await Like.find({ user: userId })
+    //   .populate("tweet")
+    //   .populate({
+    //     path: "tweet",
+    //     populate: {
+    //       path: "author",
+    //     },
+    //   });
 
-    const likes = await Like.find({ user: userId })
-      .populate("tweet")
-      .populate({
-        path: "tweet",
-        populate: {
-          path: "author",
+    const likes = await Like.aggregate([
+      {
+        $match: { user: mongoose.Types.ObjectId(userId) }, // Match likes by the user
+      },
+      {
+        $lookup: {
+          from: "tweets", // Assuming your posts collection is named "tweets"
+          localField: "tweet",
+          foreignField: "_id",
+          as: "likedTweet",
         },
-      });
+      },
+      {
+        $unwind: "$likedTweet",
+      },
+      {
+        $replaceRoot: { newRoot: "$likedTweet" }, // Replace the root with likes
+      },
 
+      // Now, apply the existing aggregation pipeline on the likes
+      {
+        $lookup: {
+          from: "retweets",
+          localField: "_id",
+          foreignField: "tweet",
+          as: "retweets",
+        },
+      },
+      {
+        $match: {
+          $or: [
+            { author: mongoose.Types.ObjectId(userId) },
+            { "retweets.user": mongoose.Types.ObjectId(userId) },
+          ],
+        },
+      },
+      {
+        $lookup: {
+          from: "likes",
+          localField: "_id",
+          foreignField: "tweet",
+          as: "likes",
+        },
+      },
+      {
+        $sort: {
+          createdAt: -1,
+        },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "author",
+          foreignField: "_id",
+          as: "author",
+        },
+      },
+      {
+        $unwind: "$author",
+      },
+      {
+        $addFields: {
+          retweetedByUser: {
+            $in: [mongoose.Types.ObjectId(userId), "$retweets.user"],
+          },
+          liked: {
+            $in: [mongoose.Types.ObjectId(userId), "$likes.user"],
+          },
+          retweeted: {
+            $in: [mongoose.Types.ObjectId(userId), "$retweets.user"],
+          },
+        },
+      },
+      // Project only the desired fields for the tweet object
+      // {
+      //   $project: {
+      //     _id: 1, // Include the tweet's ID
+      //     text: 1, // Include the tweet's text
+      //     createdAt: 1, // Include the tweet's createdAt date
+      //     author: {
+      //       _id: "$author._id", // Include the author's ID
+      //       username: "$author.username", // Include the author's username
+      //       // Add other author fields you need here
+      //     },
+      //     retweetedByUser: 1, // Include the retweetedByUser field
+      //     liked: 1, // Include the liked field
+      //     retweeted: 1, // Include the retweeted field
+      //   },
+      // },
+    ]);
+
+    // const likedTweets = likes.map((like) => like.likedTweet);
+    console.log(likes);
     return res.json(likes);
   } catch (err) {
     console.error(err);
@@ -471,6 +563,37 @@ router.get(
         : false;
 
       res.json({ userIsFollowed, userIsFollower });
+    } catch (err) {
+      console.error(err);
+      res.status(500).send("Server Error");
+    }
+  }
+);
+
+//get suggested users
+router.get(
+  "/suggested/users",
+  passport.authenticate("jwt", { session: false }),
+  async (req, res) => {
+    try {
+      const authenticatedUser = req.user._id;
+      const followedUsers = await Relationship.distinct("targetUser", {
+        follower: authenticatedUser,
+      });
+
+      const suggestedUsers = await User.aggregate([
+        {
+          $match: {
+            _id: { $ne: authenticatedUser },
+            _id: { $nin: followedUsers },
+          },
+        },
+        {
+          $sample: { size: 3 },
+        },
+      ]);
+
+      res.json(suggestedUsers);
     } catch (err) {
       console.error(err);
       res.status(500).send("Server Error");
