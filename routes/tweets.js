@@ -277,8 +277,10 @@ router.get("/search/:query", async (req, res) => {
 
     const searchResults = await Tweet.find({
       content: { $regex: searchQuery, $options: "i" },
+      parentTweetId: null,
     }).populate("author");
 
+    console.log(searchResults);
     res.json(searchResults);
   } catch (error) {
     console.log(error);

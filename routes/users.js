@@ -394,14 +394,6 @@ router.get("/:id/followers", async (req, res) => {
 router.get("/:id/likes", async (req, res) => {
   try {
     const userId = req.params.id;
-    // const likes = await Like.find({ user: userId })
-    //   .populate("tweet")
-    //   .populate({
-    //     path: "tweet",
-    //     populate: {
-    //       path: "author",
-    //     },
-    //   });
 
     const likes = await Like.aggregate([
       {
@@ -476,25 +468,8 @@ router.get("/:id/likes", async (req, res) => {
           },
         },
       },
-      // Project only the desired fields for the tweet object
-      // {
-      //   $project: {
-      //     _id: 1, // Include the tweet's ID
-      //     text: 1, // Include the tweet's text
-      //     createdAt: 1, // Include the tweet's createdAt date
-      //     author: {
-      //       _id: "$author._id", // Include the author's ID
-      //       username: "$author.username", // Include the author's username
-      //       // Add other author fields you need here
-      //     },
-      //     retweetedByUser: 1, // Include the retweetedByUser field
-      //     liked: 1, // Include the liked field
-      //     retweeted: 1, // Include the retweeted field
-      //   },
-      // },
     ]);
 
-    // const likedTweets = likes.map((like) => like.likedTweet);
     console.log(likes);
     return res.json(likes);
   } catch (err) {

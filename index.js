@@ -9,13 +9,17 @@ const passport = require("passport");
 const { Strategy, ExtractJwt } = require("passport-jwt");
 const env = require("./config");
 const User = require("./models/users");
+const fs = require("fs");
+
+const https = require("https");
+const http = require("http");
 
 (async () => {
   const app = express();
 
   // Connect with Mongo
   mongoose.set("strictQuery", true);
-  await mongoose.connect("mongodb://localhost:27017/twitter");
+  await mongoose.connect(env.mongoUri);
 
   // Setup Middlewares
   app.use(morgan("tiny"));
@@ -45,8 +49,18 @@ const User = require("./models/users");
   // Setup 404 Handler
   app.use((req, res, next) => res.status(404).json({ message: "not found" }));
 
-  // Start Listening
-  app.listen("3000", () => console.log("listening..."));
+  if (env.isProduction) {
+    const credentials = {
+      key: fs.readFileSync("ssl/server.key", "utf8"),
+      cert: fs.readFileSync("ssl/server.crt", "utf8"),
+    };
+
+    const server = https.createServer(credentials, app);
+    server.listen(443, null, null, () => console.log("listening..."));
+  } else {
+    const server = http.createServer(app);
+    server.listen(3000, null, null, () => console.log("listening..."));
+  }
 
   // Return
   return app;
