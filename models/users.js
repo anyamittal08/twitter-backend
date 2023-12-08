@@ -3,8 +3,8 @@ const mongoose = require("mongoose");
 // email validation, uniqueness validation
 const UserSchema = mongoose.Schema(
   {
-    email: String,
-    username: String,
+    email: { type: String, unique: true },
+    username: { type: String, unique: true },
     password: String,
     displayName: {
       type: String,
