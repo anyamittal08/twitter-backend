@@ -563,9 +563,6 @@ router.get(
             _id: { $nin: followedUsers },
           },
         },
-        {
-          $sample: { size: 3 },
-        },
       ]);
 
       res.json(suggestedUsers);
