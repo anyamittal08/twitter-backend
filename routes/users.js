@@ -559,8 +559,10 @@ router.get(
       const suggestedUsers = await User.aggregate([
         {
           $match: {
-            _id: { $ne: authenticatedUser },
-            _id: { $nin: followedUsers },
+            _id: {
+              $ne: authenticatedUser,
+              $nin: followedUsers || [],
+            },
           },
         },
       ]);
